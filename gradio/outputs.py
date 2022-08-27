@@ -46,6 +46,27 @@ class Image(components.Image):
             type = "plot"
         super().__init__(type=type, label=label)
 
+class ImageEditor(components.ImageEditor):
+    """
+    Component displays an output image.
+    Output type: Union[numpy.array, PIL.Image, str, matplotlib.pyplot, Tuple[Union[numpy.array, PIL.Image, str], List[Tuple[str, float, float, float, float]]]]
+    """
+
+    def __init__(
+        self, type: str = "auto", plot: bool = False, label: Optional[str] = None
+    ):
+        """
+        Parameters:
+        type (str): Type of value to be passed to component. "numpy" expects a numpy array with shape (width, height, 3), "pil" expects a PIL image object, "file" expects a file path to the saved image or a remote URL, "plot" expects a matplotlib.pyplot object, "auto" detects return type.
+        plot (bool): DEPRECATED. Whether to expect a plot to be returned by the function.
+        label (str): component name in interface.
+        """
+        warnings.warn(
+            "Usage of gradio.outputs is deprecated, and will not be supported in the future, please import your components from gradio.components",
+        )
+        if plot:
+            type = "plot"
+        super().__init__(type=type, label=label)
 
 class Video(components.Video):
     """

@@ -268,6 +268,45 @@ class Image(components.Image):
         )
 
 
+class ImageEditor(components.ImageEditor):
+    """
+    Component creates an image upload box with editing capabilities.
+    Input type: Union[numpy.array, PIL.Image, file-object]
+    """
+
+    def __init__(
+        self,
+        image_mode: str = "RGB",
+        invert_colors: bool = False,
+        source: str = "upload",
+        type: str = "numpy",
+        label: str = None,
+        optional: bool = False,
+    ):
+        """
+        Parameters:
+        shape (Tuple[int, int]): (width, height) shape to crop and resize image to; if None, matches input image size.
+        image_mode (str): "RGB" if color, or "L" if black and white.
+        invert_colors (bool): whether to invert the image as a preprocessing step.
+        source (str): Source of image. "upload" creates a box where user can drop an image file, "webcam" allows user to take snapshot from their webcam, "canvas" defaults to a white image that can be edited and drawn upon with tools.
+        tool (str): Tools used for editing. "editor" allows a full screen editor, "select" provides a cropping and zoom tool.
+        type (str): Type of value to be returned by component. "numpy" returns a numpy array with shape (width, height, 3) and values from 0 to 255, "pil" returns a PIL image object, "file" returns a temporary file object whose path can be retrieved by file_obj.name, "filepath" returns the path directly.
+        label (str): component name in interface.
+        optional (bool): If True, the interface can be submitted with no uploaded image, in which case the input value is None.
+        """
+        warnings.warn(
+            "Usage of gradio.inputs is deprecated, and will not be supported in the future, please import your component from gradio.components",
+        )
+        super().__init__(
+            image_mode=image_mode,
+            invert_colors=invert_colors,
+            source=source,
+            type=type,
+            label=label,
+            optional=optional,
+        )
+
+
 class Video(components.Video):
     """
     Component creates a video file upload that is converted to a file path.

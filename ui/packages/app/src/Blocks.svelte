@@ -213,7 +213,8 @@
 
 		for (var i = 0; i < a.length; i++) {
 			const _target = a[i].getAttribute("target");
-			if (_target !== "_blank") a[i].setAttribute("target", "_blank");
+			const href = a[i].getAttribute("href");
+			if (_target !== "_blank" && !href?.includes('void')) a[i].setAttribute("target", "_blank");
 		}
 
 		dependencies.forEach(

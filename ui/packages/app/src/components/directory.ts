@@ -18,6 +18,7 @@ export const component_map = {
 	highlightedtext: () => import("./HighlightedText"),
 	html: () => import("./HTML"),
 	image: () => import("./Image"),
+	imageeditor: () => import("./ImageEditor"),
 	interpretation: () => import("./Interpretation"),
 	json: () => import("./Json"),
 	label: () => import("./Label"),

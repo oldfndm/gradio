@@ -1775,6 +1775,283 @@ class Image(Editable, Clearable, Changeable, Streamable, IOComponent):
             raise ValueError("Image streaming only available if source is 'webcam'.")
         Streamable.stream(self, fn, inputs, outputs, _js)
 
+@document("edit", "clear", "change", "stream", "change")
+class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgSerializable):
+    """
+    Creates an image component that can be used to upload/draw images (as an input) or display images (as an output).
+    Preprocessing: passes the uploaded image as a {numpy.array}, {PIL.Image} or {str} filepath depending on `type` -- unless `tool` is `sketch`. In the special case, a {dict} with keys `image` and `mask` is passed, and the format of the corresponding values depends on `type`.
+    Postprocessing: expects a {numpy.array}, {PIL.Image} or {str} or {pathlib.Path} filepath to an image and displays the image.
+    Examples-format: a {str} filepath to a local file that contains the image.
+    Demos: image_mod, image_mod_default_image
+    Guides: Gradio_and_ONNX_on_Hugging_Face, image_classification_in_pytorch, image_classification_in_tensorflow, image_classification_with_vision_transformers, building_a_pictionary_app, create_your_own_friends_with_a_gan
+    """
+
+    def __init__(
+        self,
+        value: Optional[str | PIL.Image | np.narray] = None,
+        *,
+        image_mode: str = "RGB",
+        invert_colors: bool = False,
+        type: str = "numpy",
+        label: Optional[str] = None,
+        show_label: bool = True,
+        interactive: Optional[bool] = None,
+        visible: bool = True,
+        elem_id: Optional[str] = None,
+        **kwargs,
+    ):
+        """
+        Parameters:
+            value: A PIL Image, numpy array, path or URL for the default value that Image component is going to take. If callable, the function will be called whenever the app loads to set the initial value of the component.
+            shape: (width, height) shape to crop and resize image to; if None, matches input image size. Pass None for either width or height to only crop and resize the other.
+            image_mode: "RGB" if color, or "L" if black and white.
+            invert_colors: whether to invert the image as a preprocessing step.
+            source: Source of image. "upload" creates a box where user can drop an image file, "webcam" allows user to take snapshot from their webcam, "canvas" defaults to a white image that can be edited and drawn upon with tools.
+            tool: Tools used for editing. "editor" allows a full screen editor, "select" provides a cropping and zoom tool, "sketch" allows you to create a mask over the image and both the image and mask are passed into the function.
+            type: The format the image is converted to before being passed into the prediction function. "numpy" converts the image to a numpy array with shape (width, height, 3) and values from 0 to 255, "pil" converts the image to a PIL image object, "file" produces a temporary file object whose path can be retrieved by file_obj.name, "filepath" passes a str path to a temporary file containing the image.
+            label: component name in interface.
+            show_label: if True, will display label.
+            interactive: if True, will allow users to upload and edit an image; if False, can only be used to display images. If not provided, this is inferred based on whether the component is used as an input or output.
+            visible: If False, component will be hidden.
+            streaming: If True when used in a `live` interface, will automatically stream webcam feed. Only valid is source is 'webcam'.
+            elem_id: An optional string that is assigned as the id of this component in the HTML DOM. Can be used for targeting CSS styles.
+            mirror_webcam: If True webcam will be mirrored. Default is True.
+        """
+        self.type = type
+        self.image_mode = image_mode
+        self.source = "upload"
+        self.invert_colors = invert_colors
+        self.test_input = deepcopy(media_data.BASE64_IMAGE)
+        self.interpret_by_tokens = True
+
+        IOComponent.__init__(
+            self,
+            label=label,
+            show_label=show_label,
+            interactive=interactive,
+            visible=visible,
+            elem_id=elem_id,
+            value=value,
+            **kwargs,
+        )
+
+    def get_config(self):
+        return {
+            "image_mode": self.image_mode,
+            "source": self.source,
+            "value": self.value,
+            **IOComponent.get_config(self),
+        }
+
+    @staticmethod
+    def update(
+        value: Optional[Any] = None,
+        label: Optional[str] = None,
+        show_label: Optional[bool] = None,
+        interactive: Optional[bool] = None,
+        visible: Optional[bool] = None,
+    ):
+        updated_config = {
+            "label": label,
+            "show_label": show_label,
+            "interactive": interactive,
+            "visible": visible,
+            "value": value,
+            "__type__": "update",
+        }
+        return IOComponent.add_interactive_to_config(updated_config, interactive)
+
+    def _format_image(
+        self, im: Optional[PIL.Image], fmt: str
+    ) -> np.array | PIL.Image | str | None:
+        """Helper method to format an image based on self.type"""
+        if im is None:
+            return im
+        if self.type == "pil":
+            return im
+        elif self.type == "numpy":
+            return np.array(im)
+        elif self.type == "file" or self.type == "filepath":
+            file_obj = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=("." + fmt.lower() if fmt is not None else ".png"),
+            )
+            im.save(file_obj.name)
+            if self.type == "file":
+                warnings.warn(
+                    "The 'file' type has been deprecated. Set parameter 'type' to 'filepath' instead.",
+                )
+                return file_obj
+            else:
+                return file_obj.name
+        else:
+            raise ValueError(
+                "Unknown type: "
+                + str(self.type)
+                + ". Please choose from: 'numpy', 'pil', 'filepath'."
+            )
+
+    def generate_sample(self):
+        return deepcopy(media_data.BASE64_IMAGE)
+
+    def preprocess(self, x: str | Dict) -> np.array | PIL.Image | str | None:
+        """
+        Parameters:
+            x: base64 url data, or (if tool == "sketch) a dict of image and mask base64 url data
+        Returns:
+            image in requested format
+        """
+        if x is None:
+            return x
+
+        im = processing_utils.decode_base64_to_image(x)
+        fmt = im.format
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            im = im.convert(self.image_mode)
+        if self.invert_colors:
+            im = PIL.ImageOps.invert(im)
+
+        return self._format_image(im, fmt)
+
+    def postprocess(self, y: np.ndarray | PIL.Image | str | Path) -> str:
+        """
+        Parameters:
+            y: image as a numpy array, PIL Image, string filepath, or Path filepath
+        Returns:
+            base64 url data
+        """
+        if y is None:
+            return None
+        if isinstance(y, np.ndarray):
+            dtype = "numpy"
+        elif isinstance(y, PIL.Image.Image):
+            dtype = "pil"
+        elif isinstance(y, (str, Path)):
+            dtype = "file"
+        else:
+            raise ValueError("Cannot process this value as an Image")
+        if dtype in ["numpy", "pil"]:
+            if dtype == "pil":
+                y = np.array(y)
+            out_y = processing_utils.encode_array_to_base64(y)
+        elif dtype == "file":
+            out_y = processing_utils.encode_url_or_file_to_base64(y)
+        return out_y
+
+    def set_interpret_parameters(self, segments: int = 16):
+        """
+        Calculates interpretation score of image subsections by splitting the image into subsections, then using a "leave one out" method to calculate the score of each subsection by whiting out the subsection and measuring the delta of the output value.
+        Parameters:
+            segments: Number of interpretation segments to split image into.
+        """
+        self.interpretation_segments = segments
+        return self
+
+    def _segment_by_slic(self, x):
+        """
+        Helper method that segments an image into superpixels using slic.
+        Parameters:
+            x: base64 representation of an image
+        """
+        x = processing_utils.decode_base64_to_image(x)
+        resized_and_cropped_image = np.array(x)
+        try:
+            from skimage.segmentation import slic
+        except (ImportError, ModuleNotFoundError):
+            raise ValueError(
+                "Error: running this interpretation for images requires scikit-image, please install it first."
+            )
+        try:
+            segments_slic = slic(
+                resized_and_cropped_image,
+                self.interpretation_segments,
+                compactness=10,
+                sigma=1,
+                start_label=1,
+            )
+        except TypeError:  # For skimage 0.16 and older
+            segments_slic = slic(
+                resized_and_cropped_image,
+                self.interpretation_segments,
+                compactness=10,
+                sigma=1,
+            )
+        return segments_slic, resized_and_cropped_image
+
+    def tokenize(self, x):
+        """
+        Segments image into tokens, masks, and leave-one-out-tokens
+        Parameters:
+            x: base64 representation of an image
+        Returns:
+            tokens: list of tokens, used by the get_masked_input() method
+            leave_one_out_tokens: list of left-out tokens, used by the get_interpretation_neighbors() method
+            masks: list of masks, used by the get_interpretation_neighbors() method
+        """
+        segments_slic, resized_and_cropped_image = self._segment_by_slic(x)
+        tokens, masks, leave_one_out_tokens = [], [], []
+        replace_color = np.mean(resized_and_cropped_image, axis=(0, 1))
+        for (i, segment_value) in enumerate(np.unique(segments_slic)):
+            mask = segments_slic == segment_value
+            image_screen = np.copy(resized_and_cropped_image)
+            image_screen[segments_slic == segment_value] = replace_color
+            leave_one_out_tokens.append(
+                processing_utils.encode_array_to_base64(image_screen)
+            )
+            token = np.copy(resized_and_cropped_image)
+            token[segments_slic != segment_value] = 0
+            tokens.append(token)
+            masks.append(mask)
+        return tokens, leave_one_out_tokens, masks
+
+    def get_masked_inputs(self, tokens, binary_mask_matrix):
+        masked_inputs = []
+        for binary_mask_vector in binary_mask_matrix:
+            masked_input = np.zeros_like(tokens[0], dtype=int)
+            for token, b in zip(tokens, binary_mask_vector):
+                masked_input = masked_input + token * int(b)
+            masked_inputs.append(processing_utils.encode_array_to_base64(masked_input))
+        return masked_inputs
+
+    def get_interpretation_scores(
+        self, x, neighbors, scores, masks, tokens=None, **kwargs
+    ) -> List[List[float]]:
+        """
+        Returns:
+            A 2D array representing the interpretation score of each pixel of the image.
+        """
+        x = processing_utils.decode_base64_to_image(x)
+        x = np.array(x)
+        output_scores = np.zeros((x.shape[0], x.shape[1]))
+
+        for score, mask in zip(scores, masks):
+            output_scores += score * mask
+
+        max_val, min_val = np.max(output_scores), np.min(output_scores)
+        if max_val > 0:
+            output_scores = (output_scores - min_val) / (max_val - min_val)
+        return output_scores.tolist()
+
+    def style(
+        self,
+        rounded: Optional[bool | Tuple[bool, bool, bool, bool]] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
+    ):
+        """
+        This method can be used to change the appearance of the Image component.
+        Parameters:
+            rounded: If True, will round the corners. If a tuple, will round corners according to the values in the tuple, starting from top left and proceeding clock-wise.
+            height: Height of the image.
+            width: Width of the image.
+        """
+        self._style["height"] = height
+        self._style["width"] = width
+        return IOComponent.style(
+            self,
+            rounded=rounded,
+        )
 
 @document("change", "clear", "play", "pause", "stop", "style")
 class Video(Changeable, Clearable, Playable, IOComponent):
