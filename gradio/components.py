@@ -1776,7 +1776,7 @@ class Image(Editable, Clearable, Changeable, Streamable, IOComponent):
         Streamable.stream(self, fn, inputs, outputs, _js)
 
 @document("edit", "clear", "change", "stream", "change")
-class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgSerializable):
+class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent):
     """
     Creates an image component that can be used to upload/draw images (as an input) or display images (as an output).
     Preprocessing: passes the uploaded image as a {numpy.array}, {PIL.Image} or {str} filepath depending on `type` -- unless `tool` is `sketch`. In the special case, a {dict} with keys `image` and `mask` is passed, and the format of the corresponding values depends on `type`.
@@ -1819,6 +1819,8 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
         """
         self.type = type
         self.image_mode = image_mode
+        load_fn, initial_value = self.get_load_fn_and_initial_value(value)
+        self.value = self.postprocess(initial_value)
         self.source = "upload"
         self.invert_colors = invert_colors
         self.test_input = deepcopy(media_data.BASE64_IMAGE)
@@ -1831,7 +1833,7 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
             interactive=interactive,
             visible=visible,
             elem_id=elem_id,
-            value=value,
+            load_fn=load_fn,
             **kwargs,
         )
 
@@ -1861,7 +1863,7 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
         }
         return IOComponent.add_interactive_to_config(updated_config, interactive)
 
-    def _format_image(
+    def format_image(
         self, im: Optional[PIL.Image], fmt: str
     ) -> np.array | PIL.Image | str | None:
         """Helper method to format an image based on self.type"""
@@ -1891,9 +1893,6 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
                 + ". Please choose from: 'numpy', 'pil', 'filepath'."
             )
 
-    def generate_sample(self):
-        return deepcopy(media_data.BASE64_IMAGE)
-
     def preprocess(self, x: str | Dict) -> np.array | PIL.Image | str | None:
         """
         Parameters:
@@ -1916,10 +1915,10 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
         if (mask):
             mask_im = processing_utils.decode_base64_to_image(mask)
             mask_fmt = mask_im.format
-            processed_mask = self._format_image(mask_im, mask_fmt)
+            processed_mask = self.format_image(mask_im, mask_fmt)
 
         return {
-            "image": self._format_image(im, fmt),
+            "image": self.format_image(im, fmt),
             "mask": processed_mask,
         }
 
@@ -1937,7 +1936,7 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
             dtype = "numpy"
         elif isinstance(y, PIL.Image.Image):
             dtype = "pil"
-        elif isinstance(y, (str, Path)):
+        elif isinstance(y, str):
             dtype = "file"
         else:
             raise ValueError("Cannot process this value as an Image")
