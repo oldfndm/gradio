@@ -1903,6 +1903,7 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
         """
         if x is None:
             return x
+        x, mask = x["image"], x.get("mask", None)
 
         im = processing_utils.decode_base64_to_image(x)
         fmt = im.format
@@ -1911,8 +1912,16 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
             im = im.convert(self.image_mode)
         if self.invert_colors:
             im = PIL.ImageOps.invert(im)
+        processed_mask = None
+        if (mask):
+            mask_im = processing_utils.decode_base64_to_image(mask)
+            mask_fmt = mask_im.format
+            processed_mask = self._format_image(mask_im, mask_fmt)
 
-        return self._format_image(im, fmt)
+        return {
+            "image": self._format_image(im, fmt),
+            "mask": processed_mask,
+        }
 
     def postprocess(self, y: np.ndarray | PIL.Image | str | Path) -> str:
         """
@@ -1921,6 +1930,7 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
         Returns:
             base64 url data
         """
+        y = y["image"]
         if y is None:
             return None
         if isinstance(y, np.ndarray):
@@ -1937,7 +1947,7 @@ class ImageEditor(Editable, Clearable, Changeable, Streamable, IOComponent, ImgS
             out_y = processing_utils.encode_array_to_base64(y)
         elif dtype == "file":
             out_y = processing_utils.encode_url_or_file_to_base64(y)
-        return out_y
+        return {"image": out_y }
 
     def set_interpret_parameters(self, segments: int = 16):
         """

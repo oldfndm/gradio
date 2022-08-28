@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from "svelte";
+	import { createEventDispatcher, onMount, onDestroy } from "svelte";
 	import { Image, StaticImage } from "@gradio/image";
 	import { Block } from "@gradio/atoms";
 	import { _ } from "svelte-i18n";
@@ -9,35 +9,28 @@
 
 	export let elem_id: string = "";
 	export let visible: boolean = true;
-	export let value: null | string = null;
+	export let value: { image: string | null; mask: string | null };
 	export let style: Styles = {};
 
 	export let loading_status: LoadingStatus;
 
 	let dragging: boolean;
-
-  const imageEditorInputEvent = new CustomEvent("image-editor-input", {
-    detail: value
-  });
-
-	$: value = !value ? null : value;
+  let imageEditor: HTMLIFrameElement;
 
   let imageEditorValue: string | null = null;
-
-  document.addEventListener("image-editor-output", (e: any)=> {
-    dispatch("change", value);
-    imageEditorValue = e.detail;
-    value = e.detail;
-  })
+  let mask: string | null = null;
 
   const dispatch = createEventDispatcher<{
-		change: string | null;
+		change: { image: string | null; mask: string | null };
 		edit: undefined;
 	}>();
 
   const compareValues = (val: any) => {
-    if (imageEditorValue !== val) {
-      document.dispatchEvent(imageEditorInputEvent);
+    if (imageEditor && imageEditorValue !== val.image) {
+      imageEditor.contentWindow?.postMessage({
+        type: "image-editor-input",
+        image: value.image
+      }, '*');
     }
   }
 
@@ -45,9 +38,28 @@
     compareValues(value);
   }
 
+  function processMessages(e: MessageEvent) {
+    if (e.data?.type === 'loaded') {
+        imageEditor.contentWindow?.postMessage({
+          type: "image-editor-input",
+          detail: value.image
+        }, '*');
+      }
+
+      if (e.data?.type === 'image-editor-output') {
+        dispatch('change', { image: e.data.detail.image, mask: e.data.detail.mask });
+        imageEditorValue = e.data.detail.image;
+        value.mask = e.data.detail.mask;
+        value.image = e.data.detail.image;
+      }
+  }
+
   onMount(() => {
-    (window as any).initializeMiniPaint();
-    document.dispatchEvent(imageEditorInputEvent);
+    window.addEventListener('message', processMessages ,false);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('message', processMessages);
   });
   </script>
 
@@ -61,65 +73,5 @@
 >
 	<StatusTracker {...loading_status} />
 
-  <div id="image-editor" style="min-height: 600px; position: relative;">
-    <div class="wrapper">
-
-      <nav aria-label="Main Menu" class="main_menu" id="main_menu"></nav>
-
-      <div class="submenu">
-        <div class="block attributes" id="action_attributes"></div>
-        <button class="undo_button" id="undo_button" type="button">
-          <span class="sr_only">Undo</span>
-        </button>
-      </div>
-
-      <div class="sidebar_left" id="tools_container"></div>
-
-
-      <div class="middle_area" id="middle_area">
-
-        <canvas class="ruler_left" id="ruler_left"></canvas>
-        <canvas class="ruler_top" id="ruler_top"></canvas>
-
-        <div class="main_wrapper" id="main_wrapper">
-          <div class="canvas_wrapper" id="canvas_wrapper">
-            <div id="mouse"></div>
-            <div class="transparent-grid" id="canvas_minipaint_background"></div>
-            <canvas id="canvas_minipaint">
-              <div class="trn error">
-                Your browser does not support canvas or JavaScript is not enabled.
-              </div>
-            </canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar_right">
-        <div class="preview block">
-          <h2 class="trn toggle" data-target="toggle_preview">Preview</h2>
-          <div id="toggle_preview"></div>
-        </div>
-
-        <div class="colors block">
-          <h2 class="trn toggle" data-target="toggle_colors">Colors</h2>
-          <div class="content" id="toggle_colors"></div>
-        </div>
-
-        <div class="block" id="info_base">
-          <h2 class="trn toggle toggle-full" data-target="toggle_info">Information</h2>
-          <div class="content" id="toggle_info"></div>
-        </div>
-
-        <div class="details block" id="details_base">
-          <h2 class="trn toggle toggle-full" data-target="toggle_details">Layer details</h2>
-          <div class="content" id="toggle_details"></div>
-        </div>
-
-        <div class="layers block">
-          <h2 class="trn">Layers</h2>
-          <div class="content" id="layers_base"></div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <iframe bind:this="{imageEditor}" src="/static/vendor/minipaint.html" style="width: 100%; height: 600px; border: none;" title="image-editor"/>
 </Block>
